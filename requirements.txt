@@ -1,0 +1,36 @@
+# Deep Learning Frameworks
+torch>=2.0.0
+torchvision>=0.15.0
+
+# PyTorch Mobile (ExecuTorch)
+executorch>=1.0.0
+torchao>=0.4.0
+
+# COCO Dataset Tools
+pycocotools>=2.0.6
+
+# Data Augmentation
+albumentations>=1.3.0
+
+# Visualization & Logging
+tensorboard>=2.13.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Utilities
+numpy>=1.24.0
+pillow>=9.5.0
+tqdm>=4.65.0
+pyyaml>=6.0
+opencv-python>=4.7.0
+
+# Model Validation (optional)
+onnx>=1.14.0
+onnxruntime>=1.15.0
+
+# Metrics
+scikit-learn>=1.3.0
+
+# Development Tools
+jupyter>=1.0.0
+ipykernel>=6.23.0

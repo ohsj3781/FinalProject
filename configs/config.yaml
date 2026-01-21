@@ -1,0 +1,229 @@
+# Project Configuration for Photo Auto-Tagging System
+# ResNet-18 + LSQ Quantization + ExecuTorch (PyTorch Mobile) Deployment
+
+# Data Configuration
+data:
+  dataset: "coco2017"
+  data_dir: "data/coco"
+  train_images: "train2017"
+  val_images: "val2017"
+  annotations_dir: "annotations"
+  train_annotations: "instances_train2017.json"
+  val_annotations: "instances_val2017.json"
+  num_classes: 80
+  image_size: 224
+
+# Data Augmentation
+augmentation:
+  train:
+    resize: 256
+    random_crop: 224
+    horizontal_flip: 0.5
+    color_jitter:
+      brightness: 0.4
+      contrast: 0.4
+      saturation: 0.4
+      hue: 0.1
+    normalize:
+      mean: [0.485, 0.456, 0.406]
+      std: [0.229, 0.224, 0.225]
+  val:
+    resize: 256
+    center_crop: 224
+    normalize:
+      mean: [0.485, 0.456, 0.406]
+      std: [0.229, 0.224, 0.225]
+
+# Model Configuration
+model:
+  name: "resnet18"
+  pretrained: true
+  num_classes: 80
+  multi_label: true
+
+# Full Precision Training Configuration
+training:
+  # Basic settings
+  epochs: 90
+  batch_size: 64
+  num_workers: 4
+
+  # Optimizer
+  optimizer:
+    name: "sgd"
+    lr: 0.1
+    momentum: 0.9
+    weight_decay: 1.0e-4
+    nesterov: true
+
+  # Learning rate scheduler
+  scheduler:
+    name: "cosine"
+    T_max: 90
+    eta_min: 0.0
+
+  # Loss function
+  loss:
+    name: "bce_with_logits"
+    pos_weight: null  # Can be set for class imbalance
+
+  # Multi-label threshold
+  threshold: 0.5
+
+  # Checkpointing
+  save_dir: "checkpoints"
+  save_freq: 10
+
+  # Logging
+  log_dir: "logs"
+  log_freq: 100
+
+# LSQ Quantization Configuration
+quantization:
+  enabled: false
+  bits: 8
+
+  # Quantization ranges
+  weight:
+    signed: true
+    Q_N: 128
+    Q_P: 127
+  activation:
+    signed: false
+    Q_N: 0
+    Q_P: 255
+
+  # QAT Training settings
+  qat:
+    epochs: 90
+    batch_size: 64
+    optimizer:
+      name: "sgd"
+      lr: 0.01  # 1/10 of full precision
+      momentum: 0.9
+      weight_decay: 5.0e-5  # 0.5 * 1e-4
+      nesterov: true
+    scheduler:
+      name: "cosine"
+      T_max: 90
+      eta_min: 0.0
+
+  # Layers to exclude from quantization (keep at higher precision)
+  exclude_layers:
+    - "conv1"  # First layer
+    - "fc"     # Last layer
+
+# ExecuTorch Export Configuration
+export:
+  output_dir: "exported_models"
+  model_name: "resnet18_multilabel"
+  executorch:
+    backend: "xnnpack"  # Options: "xnnpack" (CPU), "nnapi" (NPU)
+    quantization: "int8"
+    optimize: true
+  onnx:
+    opset: 13
+    verify: true
+
+# Evaluation Configuration
+evaluation:
+  batch_size: 128
+  threshold: 0.5
+  metrics:
+    - "mAP"
+    - "precision"
+    - "recall"
+    - "f1"
+
+# Mobile Deployment Configuration
+mobile:
+  target_device: "galaxy_s24_plus"
+  use_nnapi: true
+  num_threads: 4
+  target_latency_cpu_ms: 50
+  target_latency_npu_ms: 20
+  target_model_size_mb: 5
+  target_memory_mb: 100
+
+# COCO Category Names (80 classes)
+coco_categories:
+  - person
+  - bicycle
+  - car
+  - motorcycle
+  - airplane
+  - bus
+  - train
+  - truck
+  - boat
+  - traffic light
+  - fire hydrant
+  - stop sign
+  - parking meter
+  - bench
+  - bird
+  - cat
+  - dog
+  - horse
+  - sheep
+  - cow
+  - elephant
+  - bear
+  - zebra
+  - giraffe
+  - backpack
+  - umbrella
+  - handbag
+  - tie
+  - suitcase
+  - frisbee
+  - skis
+  - snowboard
+  - sports ball
+  - kite
+  - baseball bat
+  - baseball glove
+  - skateboard
+  - surfboard
+  - tennis racket
+  - bottle
+  - wine glass
+  - cup
+  - fork
+  - knife
+  - spoon
+  - bowl
+  - banana
+  - apple
+  - sandwich
+  - orange
+  - broccoli
+  - carrot
+  - hot dog
+  - pizza
+  - donut
+  - cake
+  - chair
+  - couch
+  - potted plant
+  - bed
+  - dining table
+  - toilet
+  - tv
+  - laptop
+  - mouse
+  - remote
+  - keyboard
+  - cell phone
+  - microwave
+  - oven
+  - toaster
+  - sink
+  - refrigerator
+  - book
+  - clock
+  - vase
+  - scissors
+  - teddy bear
+  - hair drier
+  - toothbrush
