@@ -8,7 +8,7 @@ On-Device AI 기반 실시간 사진 자동 태깅 시스템으로, LSQ(Learned 
 |------|------|
 | **목표** | COCO 데이터셋 80개 카테고리를 인식하는 다중 레이블 이미지 분류 모델 개발 및 모바일 배포 |
 | **모델** | ResNet-18 (Multi-label Classification) |
-| **양자화** | LSQ 8-bit Quantization-Aware Training |
+| **양자화** | LSQ 8-bit QAT + INT8 Post-Training Quantization |
 | **배포** | ExecuTorch (PyTorch Mobile) |
 | **타겟 디바이스** | Galaxy S24+ (Exynos 2400, NPU 지원) |
 
@@ -23,8 +23,11 @@ On-Device AI 기반 실시간 사진 자동 태깅 시스템으로, LSQ(Learned 
 - [x] LSQ Quantization-Aware Training (QAT) 완료 (30 epochs)
 - [x] 모델 평가 및 성능 측정
 - [x] ExecuTorch 모델 변환 (XNNPACK, NNAPI)
+- [x] **INT8 Post-Training Quantization 구현**
+- [x] **ExecuTorch (.pte) 모델 평가 기능 구현**
+- [x] **Android 벤치마크 앱 개발**
 
-### 달성 성능
+### 달성 성능 (FP32 모델)
 
 | 지표 | 목표 | 달성 | 상태 |
 |------|------|------|------|
@@ -32,16 +35,36 @@ On-Device AI 기반 실시간 사진 자동 태깅 시스템으로, LSQ(Learned 
 | Precision | - | 73.56% | - |
 | Recall | - | 70.02% | - |
 | F1 Score | - | 68.54% | - |
-| 모델 크기 (ExecuTorch) | < 5MB | 42.87 MB | ⚠️ 추가 최적화 필요 |
+| 모델 크기 (QAT) | - | 43 MB | FP32 weights |
+| **모델 크기 (INT8)** | < 15MB | **11 MB** | ✅ **75% 감소** |
 
-> **참고**: 현재 모델 크기가 목표보다 큽니다. 이는 LSQ가 "fake quantization"으로 학습 시에만 양자화를 시뮬레이션하기 때문입니다. 실제 INT8 모델로 변환하려면 추가적인 post-training quantization이 필요합니다.
+### FP32 vs INT8 성능 비교
+
+| 지표 | FP32 모델 | INT8 모델 | 차이 |
+|------|-----------|-----------|------|
+| **mAP** | 66.72% | 63.33% | -3.39% |
+| Precision | 73.56% | 72.23% | -1.33% |
+| Recall | 70.02% | 70.89% | +0.87% |
+| F1 Score | 68.54% | 68.18% | -0.36% |
+| **모델 크기** | 43 MB | **11 MB** | **-75%** |
+| 최적 Threshold | 0.50 | 0.25 | - |
+
+> INT8 양자화로 mAP가 약 3.4% 감소했지만, 모델 크기는 75% 줄어들어 모바일 NPU에서 더 빠른 추론이 가능합니다.
+
+### 모델 크기 비교
+
+| 모델 타입 | 크기 | mAP | 설명 |
+|-----------|------|-----|------|
+| QAT (XNNPACK) | 43 MB | 66.72% | Fake quantization, FP32 weights |
+| QAT (NNAPI) | 43 MB | 66.72% | Fake quantization, FP32 weights |
+| **INT8 (XNNPACK)** | **11 MB** | 63.33% | Real INT8 weights, CPU 최적화 |
+| **INT8 (NNAPI)** | **11 MB** | 63.33% | Real INT8 weights, NPU 최적화 |
 
 ### 남은 작업
 
-- [ ] INT8 실제 양자화 적용 (모델 크기 ~11MB 목표)
-- [ ] Android 앱 개발 (Kotlin + ExecuTorch Runtime)
-- [ ] 모바일 추론 시간 측정 (CPU/NPU)
+- [ ] 모바일 실제 추론 시간 측정 (CPU vs NPU)
 - [ ] 배터리 소모량 측정
+- [ ] mAP 80% 달성을 위한 추가 학습
 
 ## 프로젝트 구조
 
@@ -53,7 +76,7 @@ FinalProject/
 │   ├── download_coco.py         # COCO 데이터셋 다운로드
 │   ├── train.py                 # 학습 스크립트 (FP32 & QAT)
 │   ├── evaluate.py              # 모델 평가
-│   └── export_executorch.py     # ExecuTorch 변환
+│   └── export_executorch.py     # ExecuTorch 변환 (INT8 지원)
 ├── src/
 │   ├── data/
 │   │   ├── dataset.py           # COCO 다중 레이블 데이터셋
@@ -74,19 +97,21 @@ FinalProject/
 │   └── qat/                     # QAT 체크포인트
 │       └── best_model.pth       # 최고 성능 QAT 모델
 ├── exported_models/
-│   ├── resnet18_multilabel_qat_xnnpack.pte  # CPU용 ExecuTorch 모델
-│   └── resnet18_multilabel_qat_nnapi.pte    # NPU용 ExecuTorch 모델
+│   ├── resnet18_multilabel_qat_xnnpack.pte   # QAT CPU용 (43MB)
+│   ├── resnet18_multilabel_qat_nnapi.pte     # QAT NPU용 (43MB)
+│   ├── resnet18_multilabel_int8_xnnpack.pte  # INT8 CPU용 (11MB)
+│   └── resnet18_multilabel_int8_nnapi.pte    # INT8 NPU용 (11MB)
+├── android/                     # Android 벤치마크 앱
+│   ├── app/
+│   │   └── src/main/
+│   │       ├── java/.../MainActivity.kt      # 벤치마크 UI
+│   │       ├── java/.../ModelBenchmark.kt    # ExecuTorch 추론
+│   │       └── assets/                       # 모델 파일 위치
+│   └── build.gradle.kts
 ├── data/
 │   └── coco/                    # COCO 2017 데이터셋 위치
 ├── logs/                        # TensorBoard 학습 로그
-├── android/                     # Android 앱 프로젝트 (개발 예정)
 ├── reference/                   # 참고 논문 및 제안서
-│   ├── paper/
-│   │   ├── Deep Residual Learning for Image Recognition.pdf
-│   │   ├── Learned Step Size Quantization.pdf
-│   │   └── Quantization and Training of Neural Networks...pdf
-│   └── proposal/
-│       └── 연구논문작품 제안서.pdf
 └── requirements.txt             # Python 의존성
 ```
 
@@ -156,6 +181,8 @@ python scripts/evaluate.py --checkpoint checkpoints/qat/best_model.pth --qat
 
 ### 4. ExecuTorch 변환 (모바일 배포용)
 
+#### QAT 모델 변환 (FP32 weights)
+
 ```bash
 # XNNPACK 백엔드 (CPU)
 python scripts/export_executorch.py \
@@ -170,7 +197,55 @@ python scripts/export_executorch.py \
     --backend nnapi
 ```
 
-### 5. TensorBoard 로그 확인
+#### INT8 양자화 모델 변환 (권장)
+
+```bash
+# INT8 XNNPACK (CPU 최적화)
+python scripts/export_executorch.py \
+    --checkpoint checkpoints/fp32/best_model.pth \
+    --int8 \
+    --backend xnnpack \
+    --calibration-samples 100
+
+# INT8 NNAPI (NPU 최적화)
+python scripts/export_executorch.py \
+    --checkpoint checkpoints/fp32/best_model.pth \
+    --int8 \
+    --backend nnapi \
+    --calibration-samples 100
+```
+
+**INT8 양자화 특징:**
+- 모델 크기: 43MB → **11MB** (75% 감소)
+- NPU에서 최적화된 INT8 연산 사용
+- Calibration 기반 정확한 양자화 범위 설정
+
+### 5. 모델 평가
+
+```bash
+# PyTorch 모델 평가
+python scripts/evaluate.py --checkpoint checkpoints/fp32/best_model.pth
+python scripts/evaluate.py --checkpoint checkpoints/qat/best_model.pth --qat
+
+# ExecuTorch (.pte) 모델 평가
+python scripts/evaluate.py --pte exported_models/resnet18_multilabel_int8_xnnpack.pte
+python scripts/evaluate.py --pte exported_models/resnet18_multilabel_qat_xnnpack.pte
+```
+
+### 6. Android 앱 빌드
+
+```bash
+cd android
+./gradlew assembleDebug
+```
+
+**앱 기능:**
+- ExecuTorch 모델 로딩 (Asset/External)
+- COCO val2017 이미지 벤치마크
+- CPU/NPU 백엔드 선택
+- 추론 시간 측정 (총 시간, 이미지당 시간)
+
+### 7. TensorBoard 로그 확인
 
 ```bash
 tensorboard --logdir logs/
@@ -182,10 +257,10 @@ tensorboard --logdir logs/
 |------|------|------|
 | 학습 프레임워크 | PyTorch | >= 2.0.0 |
 | 모바일 배포 | ExecuTorch | >= 1.0.0 |
-| 양자화 라이브러리 | torchao | >= 0.4.0 |
+| 양자화 라이브러리 | torchao | >= 0.14.0 |
 | 데이터셋 | COCO 2017 | 80 카테고리 |
-| Android 언어 | Kotlin | (예정) |
-| 하드웨어 가속 | NNAPI | NPU 지원 |
+| Android 언어 | Kotlin | 1.9+ |
+| 하드웨어 가속 | NNAPI / XNNPACK | NPU/CPU 지원 |
 
 ## 모델 아키텍처
 
@@ -213,17 +288,12 @@ FC (512 → 80) + Sigmoid
 Output: 80 class probabilities
 ```
 
-### LSQ 양자화
+### 양자화 비교
 
-```python
-# 양자화 수식
-v_bar = round(clip(v/s, -Q_N, Q_P))  # 정수 표현
-v_hat = v_bar * s                     # 양자화된 실수 값
-
-# 8-bit 설정
-# Weights: Q_N = 128, Q_P = 127 (signed)
-# Activations: Q_N = 0, Q_P = 255 (unsigned)
-```
+| 방식 | 학습 | 모델 크기 | mAP | 특징 |
+|------|------|----------|-----|------|
+| **LSQ QAT** | 학습 중 양자화 시뮬레이션 | 43 MB | 66.72% | Fake quantization, 높은 정확도 |
+| **INT8 PTQ** | 학습 후 양자화 | **11 MB** | 63.33% | Real INT8 weights, 빠른 추론 |
 
 ## 파이프라인 개요
 
@@ -237,18 +307,21 @@ v_hat = v_bar * s                     # 양자화된 실수 값
 │       │                                       ↓                  │
 │       │                              FP32 Model (mAP: ~67%)      │
 │       │                                       │                  │
+│       │                            ┌──────────┴──────────┐       │
+│       │                            ↓                     ↓       │
+│       │                      LSQ QAT Training      INT8 PTQ      │
+│       │                            │                     │       │
+│       │                            ↓                     ↓       │
+│       │                   QAT Model (43MB)      INT8 Model (11MB)│
+│       │                   mAP: 66.72%           mAP: 63.33%      │
+│       │                            │                     │       │
+│       │                            └──────────┬──────────┘       │
 │       │                                       ↓                  │
-│       └──────────────────→ LSQ QAT Training (30 epochs)          │
-│                                       │                          │
-│                                       ↓                          │
-│                              QAT Model (mAP: 66.72%)             │
-│                                       │                          │
-│                                       ↓                          │
-│                            ExecuTorch Export (.pte)              │
-│                              ┌───────┴───────┐                   │
-│                              ↓               ↓                   │
-│                          XNNPACK          NNAPI                  │
-│                           (CPU)           (NPU)                  │
+│       │                            ExecuTorch Export (.pte)      │
+│       │                              ┌───────┴───────┐           │
+│       │                              ↓               ↓           │
+│       │                          XNNPACK          NNAPI          │
+│       │                           (CPU)           (NPU)          │
 └─────────────────────────────────────────────────────────────────┘
                                    ↓
 ┌─────────────────────────────────────────────────────────────────┐
@@ -259,6 +332,7 @@ v_hat = v_bar * s                     # 양자화된 실수 값
 │                           (224x224)               │              │
 │                                                   ↓              │
 │                                         Integer Inference        │
+│                                      (INT8 optimized for NPU)    │
 │                                               │                  │
 │                                               ↓                  │
 │                                    80 Category Predictions       │
@@ -288,8 +362,14 @@ v_hat = v_bar * s                     # 양자화된 실수 값
 
 ### 4. 양자화
 - **LSQ (Learned Step Size Quantization)**: 학습 가능한 스텝 크기
-- **Per-channel Quantization**: 가중치별 최적 양자화
-- **첫/마지막 레이어 제외**: 정확도 유지
+- **INT8 PTQ**: Post-Training Quantization으로 실제 INT8 변환
+- **Per-tensor Quantization**: ExecuTorch 호환 양자화
+
+### 5. Android 벤치마크 앱
+- ExecuTorch 모델 로딩 및 추론
+- COCO val2017 이미지 벤치마크
+- CPU/NPU 백엔드 지원
+- 디바이스 정보 표시 (NPU 감지)
 
 ## 참고 문헌
 
