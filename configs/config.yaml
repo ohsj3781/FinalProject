@@ -44,9 +44,11 @@ model:
 # Full Precision Training Configuration
 training:
   # Basic settings
-  epochs: 90
-  batch_size: 64
-  num_workers: 4
+  epochs: 50
+  batch_size: 128
+  num_workers: 8
+  pin_memory: true
+  use_amp: true  # Mixed Precision Training (AMP) for faster training
 
   # Optimizer
   optimizer:
@@ -59,7 +61,7 @@ training:
   # Learning rate scheduler
   scheduler:
     name: "cosine"
-    T_max: 90
+    T_max: 50
     eta_min: 0.0
 
   # Loss function
@@ -95,8 +97,11 @@ quantization:
 
   # QAT Training settings
   qat:
-    epochs: 90
-    batch_size: 64
+    epochs: 30
+    batch_size: 128
+    num_workers: 8
+    pin_memory: true
+    use_amp: true
     optimizer:
       name: "sgd"
       lr: 0.01  # 1/10 of full precision
@@ -105,7 +110,7 @@ quantization:
       nesterov: true
     scheduler:
       name: "cosine"
-      T_max: 90
+      T_max: 30
       eta_min: 0.0
 
   # Layers to exclude from quantization (keep at higher precision)

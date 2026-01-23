@@ -58,7 +58,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def set_seed(seed: int):
+def set_seed(seed: int, deterministic: bool = False):
     """Set random seed for reproducibility."""
     import random
     import numpy as np
@@ -69,8 +69,13 @@ def set_seed(seed: int):
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
+        if deterministic:
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+        else:
+            # Enable cudnn autotuner for faster training
+            torch.backends.cudnn.deterministic = False
+            torch.backends.cudnn.benchmark = True
 
 
 def load_config(config_path: str) -> dict:
@@ -104,7 +109,7 @@ def create_model(config: dict, qat: bool = False, checkpoint_path: str = None) -
     # Load checkpoint if provided
     if checkpoint_path:
         print(f"Loading checkpoint: {checkpoint_path}")
-        checkpoint = torch.load(checkpoint_path, map_location='cpu')
+        checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
         if 'model_state_dict' in checkpoint:
             model.load_state_dict(checkpoint['model_state_dict'])
         else:
@@ -131,8 +136,8 @@ def create_model(config: dict, qat: bool = False, checkpoint_path: str = None) -
 def main():
     args = parse_args()
 
-    # Set seed
-    set_seed(args.seed)
+    # Set seed (non-deterministic for faster training with cudnn.benchmark)
+    set_seed(args.seed, deterministic=False)
 
     # Load config
     config = load_config(args.config)
@@ -178,7 +183,8 @@ def main():
             train_transform=train_transform,
             val_transform=val_transform,
             batch_size=train_config['batch_size'],
-            num_workers=config['training'].get('num_workers', 4)
+            num_workers=train_config.get('num_workers', config['training'].get('num_workers', 4)),
+            pin_memory=train_config.get('pin_memory', config['training'].get('pin_memory', True))
         )
         print(f"Training samples: {len(train_loader.dataset)}")
         print(f"Validation samples: {len(val_loader.dataset)}")
@@ -230,7 +236,8 @@ def main():
         'save_freq': config['training'].get('save_freq', 10),
         'log_dir': log_dir,
         'log_freq': config['training'].get('log_freq', 100),
-        'num_classes': config['model']['num_classes']
+        'num_classes': config['model']['num_classes'],
+        'use_amp': train_config.get('use_amp', config['training'].get('use_amp', True))
     }
 
     # Create trainer

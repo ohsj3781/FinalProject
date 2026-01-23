@@ -60,6 +60,7 @@ class LSQQuantizeFunction(Function):
         ctx.Q_N = Q_N
         ctx.Q_P = Q_P
         ctx.grad_scale = grad_scale
+        ctx.step_size_shape = step_size.shape
 
         return x_quant
 
@@ -81,6 +82,7 @@ class LSQQuantizeFunction(Function):
         Q_N = ctx.Q_N
         Q_P = ctx.Q_P
         grad_scale = ctx.grad_scale
+        step_size_shape = ctx.step_size_shape
 
         # Gradient for input (STE with clamping)
         # Pass gradient only for values within quantization range
@@ -99,12 +101,34 @@ class LSQQuantizeFunction(Function):
             grad_step
         )
         # Below range: -Q_N
-        grad_step = torch.where(below_range, torch.tensor(-Q_N, dtype=grad_step.dtype, device=grad_step.device), grad_step)
+        grad_step = torch.where(below_range, torch.full_like(grad_step, -Q_N), grad_step)
         # Above range: Q_P
-        grad_step = torch.where(above_range, torch.tensor(Q_P, dtype=grad_step.dtype, device=grad_step.device), grad_step)
+        grad_step = torch.where(above_range, torch.full_like(grad_step, Q_P), grad_step)
 
-        # Sum gradients and apply gradient scale
-        grad_step_size = (grad_output * grad_step).sum() * grad_scale
+        # Compute gradient for step size
+        grad_combined = grad_output * grad_step
+
+        # Handle per-channel quantization: sum over appropriate dimensions
+        if step_size_shape != torch.Size([]):
+            # Per-channel: step_size has shape like [C, 1, 1, 1] or [C, 1]
+            # Sum over all dimensions except the channel dimension
+            if grad_combined.dim() == 4:
+                # For conv weights [out_ch, in_ch, H, W] or activations [B, C, H, W]
+                if step_size_shape[0] == grad_combined.shape[0]:
+                    # Weight quantization: sum over [in_ch, H, W]
+                    grad_step_size = grad_combined.sum(dim=[1, 2, 3], keepdim=True) * grad_scale
+                else:
+                    # Activation quantization: sum over [B, H, W]
+                    grad_step_size = grad_combined.sum(dim=[0, 2, 3], keepdim=True).view(step_size_shape) * grad_scale
+            elif grad_combined.dim() == 2:
+                # For linear weights [out, in]
+                grad_step_size = grad_combined.sum(dim=1, keepdim=True) * grad_scale
+            else:
+                grad_step_size = grad_combined.sum() * grad_scale
+                grad_step_size = grad_step_size.view(step_size_shape)
+        else:
+            # Scalar step_size: sum over all dimensions
+            grad_step_size = grad_combined.sum() * grad_scale
 
         return grad_x, grad_step_size, None, None, None
 
@@ -153,7 +177,8 @@ class LSQQuantizer(nn.Module):
             self.step_size = nn.Parameter(torch.tensor(1.0))
 
         # Flag to indicate if step size has been initialized
-        self.initialized = False
+        # Use register_buffer so it's saved with the model state but not a parameter
+        self.register_buffer('initialized', torch.tensor(False))
 
     def init_step_size(self, x: torch.Tensor):
         """
@@ -181,15 +206,16 @@ class LSQQuantizer(nn.Module):
             # Initialize: s = 2 * mean / sqrt(Q_P)
             init_val = 2 * mean_val / math.sqrt(self.Q_P)
 
-            # Ensure minimum value
+            # Ensure minimum value (use torch.clamp for export compatibility)
             if self.per_channel:
                 init_val = torch.clamp(init_val, min=1e-6)
             else:
-                init_val = max(init_val.item(), 1e-6)
+                # Use torch.clamp instead of Python max() for export compatibility
+                init_val = torch.clamp(init_val, min=1e-6)
 
-            self.step_size.data.copy_(init_val if torch.is_tensor(init_val) else torch.tensor(init_val))
+            self.step_size.data.copy_(init_val if init_val.dim() > 0 else init_val.reshape([]))
 
-        self.initialized = True
+        self.initialized.fill_(True)
 
     def compute_grad_scale(self, x: torch.Tensor) -> float:
         """
@@ -217,12 +243,11 @@ class LSQQuantizer(nn.Module):
         Returns:
             Quantized tensor (fake quantization)
         """
-        # Initialize step size on first forward pass
-        if not self.initialized:
-            self.init_step_size(x)
-
-        # Compute gradient scale
-        grad_scale = self.compute_grad_scale(x)
+        # Initialize step size on first forward pass (only during training)
+        # During export/inference, step_size should already be set from training
+        if self.training:
+            if not self.initialized.item():
+                self.init_step_size(x)
 
         # Get step size (expand for per-channel)
         if self.per_channel:
@@ -239,7 +264,26 @@ class LSQQuantizer(nn.Module):
             step_size = self.step_size
 
         # Apply quantization
-        return LSQQuantizeFunction.apply(x, step_size, self.Q_N, self.Q_P, grad_scale)
+        if self.training:
+            # During training, use custom autograd function for proper gradient computation
+            grad_scale = self.compute_grad_scale(x)
+            return LSQQuantizeFunction.apply(x, step_size, self.Q_N, self.Q_P, grad_scale)
+        else:
+            # During inference/export, use simple tensor operations (export-friendly)
+            return self._quantize_inference(x, step_size)
+
+    def _quantize_inference(self, x: torch.Tensor, step_size: torch.Tensor) -> torch.Tensor:
+        """
+        Quantization for inference mode (export-friendly, no custom autograd).
+
+        This performs the same computation as the forward pass but without
+        custom autograd function, making it compatible with torch.export.
+        """
+        x_scaled = x / step_size
+        x_clipped = torch.clamp(x_scaled, -self.Q_N, self.Q_P)
+        x_rounded = torch.round(x_clipped)
+        x_quant = x_rounded * step_size
+        return x_quant
 
     def extra_repr(self) -> str:
         return (

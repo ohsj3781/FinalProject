@@ -85,11 +85,47 @@ def load_model(config: dict, checkpoint_path: str, qat: bool) -> nn.Module:
     checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
 
     if 'model_state_dict' in checkpoint:
-        model.load_state_dict(checkpoint['model_state_dict'])
+        # Use strict=False to handle backward compatibility with checkpoints
+        # that were saved before 'initialized' became a buffer
+        model.load_state_dict(checkpoint['model_state_dict'], strict=False)
     else:
-        model.load_state_dict(checkpoint)
+        model.load_state_dict(checkpoint, strict=False)
 
     model.eval()
+    return model
+
+
+def prepare_model_for_export(model: nn.Module) -> nn.Module:
+    """
+    Prepare model for torch.export by ensuring all quantizers are initialized.
+
+    This runs a dummy forward pass to initialize step_size parameters,
+    which avoids data-dependent control flow during export.
+    """
+    from src.models.quantization import LSQQuantizer
+
+    # Run a dummy forward pass in TRAINING mode to initialize all quantizers
+    print("Initializing quantizers with dummy forward pass...")
+    model.train()  # Enable training mode for initialization
+    with torch.no_grad():
+        dummy_input = torch.randn(1, 3, 224, 224)
+        _ = model(dummy_input)
+
+    # Switch back to eval mode for export
+    model.eval()
+
+    # Verify all LSQQuantizer modules are initialized
+    uninitialized = []
+    for name, module in model.named_modules():
+        if isinstance(module, LSQQuantizer):
+            if not module.initialized.item():
+                uninitialized.append(name)
+
+    if uninitialized:
+        print(f"Warning: Some quantizers are still uninitialized: {uninitialized}")
+    else:
+        print("All quantizers initialized successfully")
+
     return model
 
 
@@ -269,6 +305,10 @@ def main():
 
     # Load model
     model = load_model(config, args.checkpoint, args.qat)
+
+    # Prepare model for export (initialize quantizers)
+    if args.qat:
+        model = prepare_model_for_export(model)
 
     print(f"\nModel info:")
     print(f"  Parameters: {count_parameters(model):,}")

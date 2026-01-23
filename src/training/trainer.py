@@ -14,6 +14,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from torch.amp import autocast, GradScaler
 from tqdm import tqdm
 
 from src.utils.metrics import MultiLabelMetrics, AverageMeter
@@ -67,6 +68,10 @@ class Trainer:
         self.log_dir = self.config.get('log_dir', 'logs')
         self.log_freq = self.config.get('log_freq', 100)
 
+        # Mixed Precision Training (AMP)
+        self.use_amp = self.config.get('use_amp', True) and self.device.type == 'cuda'
+        self.scaler = GradScaler('cuda', enabled=self.use_amp)
+
         # Create directories
         os.makedirs(self.save_dir, exist_ok=True)
         os.makedirs(self.log_dir, exist_ok=True)
@@ -93,6 +98,7 @@ class Trainer:
         """
         print(f"Starting training for {self.epochs} epochs")
         print(f"Device: {self.device}")
+        print(f"Mixed Precision (AMP): {'Enabled' if self.use_amp else 'Disabled'}")
         print(f"Training samples: {len(self.train_loader.dataset)}")
         print(f"Validation samples: {len(self.val_loader.dataset)}")
         print("-" * 50)
@@ -145,18 +151,20 @@ class Trainer:
             # Measure data loading time
             data_time.update(time.time() - end)
 
-            # Move to device
-            images = images.to(self.device)
-            targets = targets.to(self.device)
+            # Move to device (non_blocking for faster transfer with pin_memory)
+            images = images.to(self.device, non_blocking=True)
+            targets = targets.to(self.device, non_blocking=True)
 
-            # Forward pass
-            outputs = self.model(images)
-            loss = self.criterion(outputs, targets)
+            # Forward pass with AMP
+            with autocast('cuda', enabled=self.use_amp):
+                outputs = self.model(images)
+                loss = self.criterion(outputs, targets)
 
-            # Backward pass
+            # Backward pass with gradient scaling
             self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
+            self.scaler.scale(loss).backward()
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
 
             # Update metrics
             loss_meter.update(loss.item(), images.size(0))
@@ -195,18 +203,19 @@ class Trainer:
         )
 
         for images, targets in pbar:
-            images = images.to(self.device)
-            targets = targets.to(self.device)
+            images = images.to(self.device, non_blocking=True)
+            targets = targets.to(self.device, non_blocking=True)
 
-            # Forward pass
-            outputs = self.model(images)
-            loss = self.criterion(outputs, targets)
+            # Forward pass with AMP
+            with autocast('cuda', enabled=self.use_amp):
+                outputs = self.model(images)
+                loss = self.criterion(outputs, targets)
 
             # Update loss meter
             loss_meter.update(loss.item(), images.size(0))
 
-            # Update metrics
-            probs = torch.sigmoid(outputs)
+            # Update metrics (use float32 for sigmoid)
+            probs = torch.sigmoid(outputs.float())
             self.metrics.update(probs, targets)
 
             pbar.set_postfix({'loss': f'{loss_meter.avg:.4f}'})
@@ -253,6 +262,10 @@ class Trainer:
         if self.scheduler is not None:
             checkpoint['scheduler_state_dict'] = self.scheduler.state_dict()
 
+        # Save AMP scaler state
+        if self.use_amp:
+            checkpoint['scaler_state_dict'] = self.scaler.state_dict()
+
         # Save regular checkpoint
         checkpoint_path = os.path.join(
             self.save_dir, f'checkpoint_epoch_{epoch + 1}.pth'
@@ -278,6 +291,10 @@ class Trainer:
 
         if self.scheduler is not None and 'scheduler_state_dict' in checkpoint:
             self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+
+        # Load AMP scaler state
+        if self.use_amp and 'scaler_state_dict' in checkpoint:
+            self.scaler.load_state_dict(checkpoint['scaler_state_dict'])
 
         print(f"  Resumed from epoch {self.current_epoch}")
         print(f"  Best mAP so far: {self.best_mAP:.4f}")
