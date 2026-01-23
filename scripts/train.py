@@ -217,9 +217,12 @@ def main():
         pos_weight = train_loader.dataset.get_pos_weights().to(device)
 
     # Create loss function
+    loss_config = config['training']['loss']
+    loss_kwargs = {k: v for k, v in loss_config.items() if k not in ('name', 'pos_weight')}
     criterion = get_loss_function(
-        config['training']['loss']['name'],
-        pos_weight=pos_weight
+        loss_config['name'],
+        pos_weight=pos_weight,
+        **loss_kwargs
     )
 
     # Create optimizer

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Background circle (adaptive icon safe zone) -->
+    <group android:translateX="27" android:translateY="27">
+        <!-- AI Text -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M10,45 L18,20 L26,45 L23,45 L21,39 L13,39 L11,45 Z M14,36 L20,36 L17,26 Z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M30,45 L30,20 L33,20 L33,45 Z" />
+
+        <!-- Speed lines -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:strokeWidth="2"
+            android:pathData="M40,25 L52,25" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:strokeWidth="2"
+            android:pathData="M40,32 L48,32" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:strokeWidth="2"
+            android:pathData="M40,39 L50,39" />
+    </group>
+</vector>

@@ -66,8 +66,11 @@ training:
 
   # Loss function
   loss:
-    name: "bce_with_logits"
-    pos_weight: null  # Can be set for class imbalance
+    name: "asymmetric"  # Changed from bce_with_logits for better multi-label performance
+    gamma_neg: 4        # Focusing parameter for negative samples
+    gamma_pos: 1        # Focusing parameter for positive samples
+    clip: 0.05          # Probability margin for negative samples
+    pos_weight: "auto"  # Auto-compute from dataset class frequencies
 
   # Multi-label threshold
   threshold: 0.5
