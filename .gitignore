@@ -1,4 +1,5 @@
 .claude
 .venv/
 /data
-checkpoints/**/checkpoint_*.pth
+checkpoints/
+__pycache__/
