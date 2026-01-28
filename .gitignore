@@ -1,2 +1,4 @@
+.claude
 .venv/
-data/coco
+/data
+checkpoints/**/checkpoint_*.pth
