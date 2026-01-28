@@ -1,7 +1,7 @@
 """
-ResNet-18 Implementation for Multi-Label Classification
+ResNet Implementation for Multi-Label Classification
 
-This module implements ResNet-18 architecture following the original paper
+This module implements ResNet-18/34/50 architectures following the original paper
 "Deep Residual Learning for Image Recognition" by He et al.
 
 The model is adapted for multi-label classification with 80 COCO categories,
@@ -107,24 +107,97 @@ class BasicBlock(nn.Module):
         return out
 
 
+class Bottleneck(nn.Module):
+    """
+    Bottleneck residual block for ResNet-50/101/152.
+
+    Architecture:
+        x -> Conv1x1 -> BN -> ReLU -> Conv3x3 -> BN -> ReLU -> Conv1x1 -> BN -> (+x) -> ReLU
+
+    The expansion factor is 4, meaning the output channels are 4x the internal channels.
+    """
+
+    expansion = 4
+
+    def __init__(
+        self,
+        in_planes: int,
+        planes: int,
+        stride: int = 1,
+        downsample: Optional[nn.Module] = None,
+        groups: int = 1,
+        base_width: int = 64,
+        dilation: int = 1,
+        norm_layer: Optional[Type[nn.Module]] = None
+    ):
+        super().__init__()
+
+        if norm_layer is None:
+            norm_layer = nn.BatchNorm2d
+
+        width = int(planes * (base_width / 64.0)) * groups
+
+        # 1x1 convolution to reduce channels
+        self.conv1 = conv1x1(in_planes, width)
+        self.bn1 = norm_layer(width)
+
+        # 3x3 convolution
+        self.conv2 = conv3x3(width, width, stride, groups, dilation)
+        self.bn2 = norm_layer(width)
+
+        # 1x1 convolution to expand channels
+        self.conv3 = conv1x1(width, planes * self.expansion)
+        self.bn3 = norm_layer(planes * self.expansion)
+
+        self.relu = nn.ReLU(inplace=True)
+        self.downsample = downsample
+        self.stride = stride
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        identity = x
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+        out = self.relu(out)
+
+        out = self.conv3(out)
+        out = self.bn3(out)
+
+        if self.downsample is not None:
+            identity = self.downsample(x)
+
+        out += identity
+        out = self.relu(out)
+
+        return out
+
+
 class ResNet(nn.Module):
     """
     ResNet implementation.
 
-    Architecture for ResNet-18:
+    Architecture for ResNet-18/34 (BasicBlock):
         - conv1: 7x7, 64, stride 2
         - maxpool: 3x3, stride 2
-        - layer1: 2 x BasicBlock (64 channels)
-        - layer2: 2 x BasicBlock (128 channels, stride 2)
-        - layer3: 2 x BasicBlock (256 channels, stride 2)
-        - layer4: 2 x BasicBlock (512 channels, stride 2)
+        - layer1: N x BasicBlock (64 channels)
+        - layer2: N x BasicBlock (128 channels, stride 2)
+        - layer3: N x BasicBlock (256 channels, stride 2)
+        - layer4: N x BasicBlock (512 channels, stride 2)
         - avgpool: global average pooling
         - fc: 512 -> num_classes
+
+    Architecture for ResNet-50/101/152 (Bottleneck):
+        - Same structure but with Bottleneck blocks
+        - fc: 2048 -> num_classes (due to expansion=4)
     """
 
     def __init__(
         self,
-        block: Type[BasicBlock],
+        block: Type[nn.Module],  # BasicBlock or Bottleneck
         layers: List[int],
         num_classes: int = 80,
         zero_init_residual: bool = False,
@@ -170,7 +243,7 @@ class ResNet(nn.Module):
 
     def _make_layer(
         self,
-        block: Type[BasicBlock],
+        block: Type[nn.Module],  # BasicBlock or Bottleneck
         planes: int,
         blocks: int,
         stride: int = 1
@@ -227,7 +300,9 @@ class ResNet(nn.Module):
         # Zero-initialize the last BN in each residual branch
         if zero_init_residual:
             for m in self.modules():
-                if isinstance(m, BasicBlock) and m.bn2.weight is not None:
+                if isinstance(m, Bottleneck) and m.bn3.weight is not None:
+                    nn.init.constant_(m.bn3.weight, 0)
+                elif isinstance(m, BasicBlock) and m.bn2.weight is not None:
                     nn.init.constant_(m.bn2.weight, 0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -286,7 +361,7 @@ def resnet18(num_classes: int = 80, pretrained: bool = True) -> ResNet:
         pretrained: Whether to load ImageNet pretrained weights
 
     Returns:
-        ResNet-18 model
+        ResNet-18 model (11.7M parameters)
     """
     model = ResNet(BasicBlock, [2, 2, 2, 2], num_classes=num_classes)
 
@@ -306,6 +381,92 @@ def resnet18(num_classes: int = 80, pretrained: bool = True) -> ResNet:
         print("Loaded ImageNet pretrained weights for ResNet-18")
 
     return model
+
+
+def resnet34(num_classes: int = 80, pretrained: bool = True) -> ResNet:
+    """
+    Create ResNet-34 model for multi-label classification.
+
+    Args:
+        num_classes: Number of output classes (default: 80 for COCO)
+        pretrained: Whether to load ImageNet pretrained weights
+
+    Returns:
+        ResNet-34 model (21.8M parameters)
+    """
+    model = ResNet(BasicBlock, [3, 4, 6, 3], num_classes=num_classes)
+
+    if pretrained:
+        # Load pretrained weights from torchvision
+        pretrained_model = models.resnet34(weights=models.ResNet34_Weights.IMAGENET1K_V1)
+        pretrained_dict = pretrained_model.state_dict()
+
+        # Remove fc layer weights (different number of classes)
+        pretrained_dict = {k: v for k, v in pretrained_dict.items() if 'fc' not in k}
+
+        # Load pretrained weights
+        model_dict = model.state_dict()
+        model_dict.update(pretrained_dict)
+        model.load_state_dict(model_dict)
+
+        print("Loaded ImageNet pretrained weights for ResNet-34")
+
+    return model
+
+
+def resnet50(num_classes: int = 80, pretrained: bool = True) -> ResNet:
+    """
+    Create ResNet-50 model for multi-label classification.
+
+    Args:
+        num_classes: Number of output classes (default: 80 for COCO)
+        pretrained: Whether to load ImageNet pretrained weights
+
+    Returns:
+        ResNet-50 model (25.6M parameters)
+    """
+    model = ResNet(Bottleneck, [3, 4, 6, 3], num_classes=num_classes)
+
+    if pretrained:
+        # Load pretrained weights from torchvision
+        pretrained_model = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
+        pretrained_dict = pretrained_model.state_dict()
+
+        # Remove fc layer weights (different number of classes)
+        pretrained_dict = {k: v for k, v in pretrained_dict.items() if 'fc' not in k}
+
+        # Load pretrained weights
+        model_dict = model.state_dict()
+        model_dict.update(pretrained_dict)
+        model.load_state_dict(model_dict)
+
+        print("Loaded ImageNet pretrained weights for ResNet-50")
+
+    return model
+
+
+def get_resnet(name: str, num_classes: int = 80, pretrained: bool = True) -> ResNet:
+    """
+    Get ResNet model by name.
+
+    Args:
+        name: Model name ('resnet18', 'resnet34', 'resnet50')
+        num_classes: Number of output classes (default: 80 for COCO)
+        pretrained: Whether to load ImageNet pretrained weights
+
+    Returns:
+        ResNet model
+    """
+    models_dict = {
+        'resnet18': resnet18,
+        'resnet34': resnet34,
+        'resnet50': resnet50,
+    }
+
+    if name not in models_dict:
+        raise ValueError(f"Unknown model: {name}. Available: {list(models_dict.keys())}")
+
+    return models_dict[name](num_classes=num_classes, pretrained=pretrained)
 
 
 def count_parameters(model: nn.Module) -> int:
@@ -328,23 +489,33 @@ def get_model_size_mb(model: nn.Module) -> float:
 
 
 if __name__ == "__main__":
-    # Test the model
-    model = resnet18(num_classes=80, pretrained=False)
+    # Test all models
+    print("=" * 60)
+    print("ResNet Model Comparison")
+    print("=" * 60)
 
-    print(f"Model architecture:\n{model}")
-    print(f"\nNumber of parameters: {count_parameters(model):,}")
-    print(f"Model size: {get_model_size_mb(model):.2f} MB")
-
-    # Test forward pass
     dummy_input = torch.randn(2, 3, 224, 224)
-    output = model(dummy_input)
-    print(f"\nInput shape: {dummy_input.shape}")
-    print(f"Output shape: {output.shape}")
 
-    # Test feature extraction
-    features = model.get_features(dummy_input)
-    print(f"Features shape: {features.shape}")
+    for model_name in ['resnet18', 'resnet34', 'resnet50']:
+        print(f"\n{model_name.upper()}")
+        print("-" * 40)
 
-    # Test with sigmoid for multi-label
-    probs = torch.sigmoid(output)
-    print(f"Probabilities range: [{probs.min():.4f}, {probs.max():.4f}]")
+        model = get_resnet(model_name, num_classes=80, pretrained=False)
+
+        print(f"Parameters: {count_parameters(model):,}")
+        print(f"Model size: {get_model_size_mb(model):.2f} MB")
+
+        # Test forward pass
+        output = model(dummy_input)
+        print(f"Output shape: {output.shape}")
+
+        # Test feature extraction
+        features = model.get_features(dummy_input)
+        print(f"Features shape: {features.shape}")
+
+    print("\n" + "=" * 60)
+    print("Expected INT8 sizes:")
+    print("  ResNet-18: ~11 MB")
+    print("  ResNet-34: ~21 MB")
+    print("  ResNet-50: ~25 MB")
+    print("=" * 60)

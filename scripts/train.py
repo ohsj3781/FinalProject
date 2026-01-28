@@ -1,19 +1,25 @@
 #!/usr/bin/env python3
 """
-Training Script for ResNet-18 Multi-Label Classification
+Training Script for ResNet Multi-Label Classification
 
 This script handles both full-precision training and quantization-aware training (QAT)
-for the photo auto-tagging system.
+for the photo auto-tagging system. Supports ResNet-18, ResNet-34, and ResNet-50.
 
 Usage:
-    # Full precision training
+    # Full precision training (uses model from config.yaml)
     python scripts/train.py --config configs/config.yaml
 
+    # Full precision training with specific model
+    python scripts/train.py --config configs/config.yaml --model resnet50
+
     # QAT training (requires pretrained full precision model)
-    python scripts/train.py --config configs/config.yaml --qat --checkpoint checkpoints/best_model.pth
+    python scripts/train.py --config configs/config.yaml --qat --checkpoint checkpoints/resnet50_fp32/best_model.pth
 
     # Resume training
-    python scripts/train.py --config configs/config.yaml --resume checkpoints/checkpoint_epoch_50.pth
+    python scripts/train.py --config configs/config.yaml --model resnet50 --resume checkpoints/resnet50_fp32/checkpoint_epoch_10.pth
+
+Checkpoints are saved to: checkpoints/{model_name}_{fp32|qat}/
+    e.g., checkpoints/resnet50_fp32/best_model.pth
 """
 
 import argparse
@@ -29,7 +35,7 @@ import yaml
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.models.resnet import resnet18, count_parameters, get_model_size_mb
+from src.models.resnet import get_resnet, count_parameters, get_model_size_mb
 from src.models.quantization import quantize_model
 from src.data.dataset import create_coco_dataloaders
 from src.data.augmentation import get_transforms_from_config
@@ -38,9 +44,12 @@ from src.training.loss import get_loss_function
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Train ResNet-18 for multi-label classification')
+    parser = argparse.ArgumentParser(description='Train ResNet for multi-label classification')
     parser.add_argument('--config', type=str, default='configs/config.yaml',
                         help='Path to config file')
+    parser.add_argument('--model', type=str, default=None,
+                        choices=['resnet18', 'resnet34', 'resnet50'],
+                        help='Model architecture (overrides config)')
     parser.add_argument('--qat', action='store_true',
                         help='Enable Quantization-Aware Training')
     parser.add_argument('--checkpoint', type=str, default=None,
@@ -99,9 +108,12 @@ def setup_device(gpu_id: int) -> torch.device:
 def create_model(config: dict, qat: bool = False, checkpoint_path: str = None) -> nn.Module:
     """Create and optionally load model."""
     model_config = config['model']
+    model_name = model_config.get('name', 'resnet18')
 
     # Create base model
-    model = resnet18(
+    print(f"Creating model: {model_name}")
+    model = get_resnet(
+        name=model_name,
         num_classes=model_config['num_classes'],
         pretrained=model_config.get('pretrained', True) and checkpoint_path is None
     )
@@ -150,6 +162,12 @@ def main():
         config['training']['save_dir'] = args.output_dir
         config['training']['log_dir'] = os.path.join(args.output_dir, 'logs')
 
+    # Override model name from command line if specified
+    if args.model:
+        config['model']['name'] = args.model
+
+    model_name = config['model']['name']
+
     # Setup device
     device = setup_device(args.gpu)
 
@@ -159,12 +177,12 @@ def main():
             print("ERROR: QAT requires a pretrained checkpoint (--checkpoint)")
             sys.exit(1)
         train_config = config['quantization']['qat']
-        save_prefix = 'qat'
+        save_prefix = f'{model_name}_qat'
     else:
         train_config = config['training']
-        save_prefix = 'fp32'
+        save_prefix = f'{model_name}_fp32'
 
-    # Update save/log directories
+    # Update save/log directories (includes model name)
     save_dir = os.path.join(config['training']['save_dir'], save_prefix)
     log_dir = os.path.join(config['training']['log_dir'], save_prefix)
     os.makedirs(save_dir, exist_ok=True)

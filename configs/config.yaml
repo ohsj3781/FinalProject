@@ -1,5 +1,5 @@
 # Project Configuration for Photo Auto-Tagging System
-# ResNet-18 + LSQ Quantization + ExecuTorch (PyTorch Mobile) Deployment
+# ResNet + LSQ Quantization + ExecuTorch (PyTorch Mobile) Deployment
 
 # Data Configuration
 data:
@@ -35,8 +35,9 @@ augmentation:
       std: [0.229, 0.224, 0.225]
 
 # Model Configuration
+# Available models: resnet18 (11.7M params), resnet34 (21.8M params), resnet50 (25.6M params)
 model:
-  name: "resnet18"
+  name: "resnet50"  # Options: resnet18, resnet34, resnet50
   pretrained: true
   num_classes: 80
   multi_label: true
@@ -45,7 +46,7 @@ model:
 training:
   # Basic settings
   epochs: 50
-  batch_size: 128
+  batch_size: 64
   num_workers: 8
   pin_memory: true
   use_amp: true  # Mixed Precision Training (AMP) for faster training
@@ -101,7 +102,7 @@ quantization:
   # QAT Training settings
   qat:
     epochs: 30
-    batch_size: 128
+    batch_size: 64
     num_workers: 8
     pin_memory: true
     use_amp: true

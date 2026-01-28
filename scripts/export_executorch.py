@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """
-ExecuTorch Export Script for ResNet-18 Multi-Label Classification
+ExecuTorch Export Script for ResNet Multi-Label Classification
 
 This script exports a trained PyTorch model to ExecuTorch format (.pte)
-for mobile deployment.
+for mobile deployment. Supports ResNet-18, ResNet-34, and ResNet-50.
 
 Usage:
     # Export full precision model
-    python scripts/export_executorch.py --checkpoint checkpoints/best_model.pth
+    python scripts/export_executorch.py --checkpoint checkpoints/resnet50_fp32/best_model.pth --model resnet50
 
     # Export QAT model with XNNPACK backend
-    python scripts/export_executorch.py --checkpoint checkpoints/qat/best_model.pth --qat --backend xnnpack
+    python scripts/export_executorch.py --checkpoint checkpoints/resnet50_qat/best_model.pth --model resnet50 --qat --backend xnnpack
 
     # Export with NNAPI backend for NPU acceleration
-    python scripts/export_executorch.py --checkpoint checkpoints/qat/best_model.pth --qat --backend nnapi
+    python scripts/export_executorch.py --checkpoint checkpoints/resnet50_qat/best_model.pth --model resnet50 --qat --backend nnapi
 
     # Export with INT8 quantization for NPU optimization
-    python scripts/export_executorch.py --checkpoint checkpoints/fp32/best_model.pth --int8 --backend xnnpack
+    python scripts/export_executorch.py --checkpoint checkpoints/resnet50_fp32/best_model.pth --model resnet50 --int8 --backend xnnpack
 """
 
 import argparse
@@ -32,7 +32,7 @@ import yaml
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.models.resnet import resnet18, count_parameters, get_model_size_mb
+from src.models.resnet import get_resnet, count_parameters, get_model_size_mb
 from src.models.quantization import quantize_model
 
 
@@ -42,6 +42,9 @@ def parse_args():
                         help='Path to model checkpoint')
     parser.add_argument('--config', type=str, default='configs/config.yaml',
                         help='Path to config file')
+    parser.add_argument('--model', type=str, default=None,
+                        choices=['resnet18', 'resnet34', 'resnet50'],
+                        help='Model architecture (overrides config)')
     parser.add_argument('--qat', action='store_true',
                         help='Model was trained with QAT')
     parser.add_argument('--int8', action='store_true',
@@ -70,9 +73,12 @@ def load_config(config_path: str) -> dict:
 def load_model(config: dict, checkpoint_path: str, qat: bool) -> nn.Module:
     """Load trained model."""
     model_config = config['model']
+    model_name = model_config.get('name', 'resnet18')
 
     # Create base model
-    model = resnet18(
+    print(f"Creating model: {model_name}")
+    model = get_resnet(
+        name=model_name,
         num_classes=model_config['num_classes'],
         pretrained=False
     )
@@ -658,6 +664,10 @@ def main():
     # Load config
     config = load_config(args.config)
 
+    # Override model name from command line if specified
+    if args.model:
+        config['model']['name'] = args.model
+
     # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -682,6 +692,7 @@ def main():
     print(f"  Mode: {'INT8 PTQ' if args.int8 else ('QAT' if args.qat else 'FP32')}")
 
     # Determine output filename
+    model_name = config['model'].get('name', 'resnet18')
     if args.output_name:
         output_name = args.output_name
     else:
@@ -691,7 +702,7 @@ def main():
             model_type = 'qat'
         else:
             model_type = 'fp32'
-        output_name = f"resnet18_multilabel_{model_type}_{args.backend}"
+        output_name = f"{model_name}_multilabel_{model_type}_{args.backend}"
 
     output_path = os.path.join(args.output_dir, f"{output_name}.pte")
 

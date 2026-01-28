@@ -3,15 +3,16 @@ Evaluation Results
 ==================================================
 
 Configuration:
-  Model: exported_models/resnet18_multilabel_int8_nnapi.pte (ExecuTorch)
+  Checkpoint: checkpoints/resnet50_fp32/best_model.pth
+  QAT: False
   Batch Size: 128
   Threshold: None
 
 Metrics:
-  mAP: 0.6354
-  precision: 0.7231
-  recall: 0.7078
-  f1: 0.6815
-  precision_macro: 0.6694
-  recall_macro: 0.5892
-  f1_macro: 0.6117
+  mAP: 0.7721
+  precision: 0.8364
+  recall: 0.7638
+  f1: 0.7713
+  precision_macro: 0.7856
+  recall_macro: 0.6663
+  f1_macro: 0.7151

@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """
-Evaluation Script for ResNet-18 Multi-Label Classification
+Evaluation Script for ResNet Multi-Label Classification
 
 This script evaluates a trained model on the COCO validation set.
+Supports ResNet-18, ResNet-34, and ResNet-50.
 
 Usage:
     # PyTorch model evaluation
-    python scripts/evaluate.py --checkpoint checkpoints/best_model.pth
-    python scripts/evaluate.py --checkpoint checkpoints/qat/best_model.pth --qat
+    python scripts/evaluate.py --checkpoint checkpoints/resnet50_fp32/best_model.pth --model resnet50
+    python scripts/evaluate.py --checkpoint checkpoints/resnet50_qat/best_model.pth --model resnet50 --qat
 
     # ExecuTorch (.pte) model evaluation
-    python scripts/evaluate.py --pte exported_models/resnet18_multilabel_int8_xnnpack.pte
+    python scripts/evaluate.py --pte exported_models/resnet50_multilabel_int8_xnnpack.pte
     python scripts/evaluate.py --pte exported_models/resnet18_multilabel_qat_xnnpack.pte
 """
 
@@ -28,7 +29,7 @@ from tqdm import tqdm
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.models.resnet import resnet18, count_parameters, get_model_size_mb
+from src.models.resnet import get_resnet, count_parameters, get_model_size_mb
 from src.models.quantization import quantize_model
 from src.data.dataset import create_coco_dataloaders
 from src.data.augmentation import ValTransform
@@ -36,13 +37,16 @@ from src.utils.metrics import MultiLabelMetrics, compute_optimal_threshold
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Evaluate ResNet-18 model')
+    parser = argparse.ArgumentParser(description='Evaluate ResNet model')
     parser.add_argument('--checkpoint', type=str, default=None,
                         help='Path to PyTorch model checkpoint (.pth)')
     parser.add_argument('--pte', type=str, default=None,
                         help='Path to ExecuTorch model (.pte)')
     parser.add_argument('--config', type=str, default='configs/config.yaml',
                         help='Path to config file')
+    parser.add_argument('--model', type=str, default=None,
+                        choices=['resnet18', 'resnet34', 'resnet50'],
+                        help='Model architecture (overrides config)')
     parser.add_argument('--qat', action='store_true',
                         help='Model was trained with QAT (for PyTorch checkpoint)')
     parser.add_argument('--data-dir', type=str, default=None,
@@ -89,9 +93,12 @@ def setup_device(gpu_id: int) -> torch.device:
 def load_model(config: dict, checkpoint_path: str, qat: bool, device: torch.device) -> nn.Module:
     """Load trained model."""
     model_config = config['model']
+    model_name = model_config.get('name', 'resnet18')
 
     # Create base model
-    model = resnet18(
+    print(f"Creating model: {model_name}")
+    model = get_resnet(
+        name=model_name,
         num_classes=model_config['num_classes'],
         pretrained=False
     )
@@ -369,6 +376,10 @@ def main():
 
     # Load config
     config = load_config(args.config)
+
+    # Override model name from command line if specified
+    if args.model:
+        config['model']['name'] = args.model
 
     # Override data directory if specified
     if args.data_dir:
