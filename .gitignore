@@ -2,4 +2,7 @@
 .venv/
 /data
 checkpoints/
+exported_models/
 __pycache__/
+*.pth
+*.pte
