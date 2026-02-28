@@ -99,18 +99,18 @@ quantization:
     Q_N: 0
     Q_P: 255
 
-  # QAT Training settings
+  # QAT Training settings (LSQ paper: lr=0.001, no AMP for 8-bit)
   qat:
     epochs: 30
-    batch_size: 64
+    batch_size: 32  # AMP OFF이므로 FP32 → 메모리 2x, batch 줄임
     num_workers: 8
     pin_memory: true
-    use_amp: true
+    use_amp: false  # AMP OFF: FP16이 LSQ step_size 학습을 방해함
     optimizer:
       name: "sgd"
-      lr: 0.01  # 1/10 of full precision
+      lr: 0.001  # LSQ 논문 권장: 8-bit QAT는 0.001
       momentum: 0.9
-      weight_decay: 5.0e-5  # 0.5 * 1e-4
+      weight_decay: 1.0e-4  # LSQ 논문 Table 2: 8-bit 최적값
       nesterov: true
     scheduler:
       name: "cosine"

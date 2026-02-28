@@ -221,14 +221,16 @@ class LSQQuantizer(nn.Module):
         """
         Compute gradient scaling factor.
 
-        From LSQ paper: g = 1 / sqrt(N * Q_P)
-        where N is the number of elements being quantized.
+        From LSQ paper Section 2.2:
+            Weight:     g = 1 / sqrt(N_W * Q_P)  where N_W = weight elements
+            Activation: g = 1 / sqrt(N_F * Q_P)  where N_F = features per sample (not batch)
         """
         if self.is_activation:
-            # For activations: N = batch_size * height * width * channels
-            n = x.numel()
+            # N_F = features in a layer (exclude batch dimension)
+            # x shape: [B, C, H, W] or [B, F]
+            n = x[0].numel()  # single sample의 feature 수
         else:
-            # For weights: N = number of weight elements
+            # N_W = total weight elements in the layer
             n = x.numel()
 
         return 1.0 / math.sqrt(n * self.Q_P)

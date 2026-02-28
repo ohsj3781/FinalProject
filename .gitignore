@@ -6,3 +6,5 @@ exported_models/
 __pycache__/
 *.pth
 *.pte
+/logs/*
+/android*

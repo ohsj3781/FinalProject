@@ -68,8 +68,9 @@ On-Device AI 기반 실시간 사진 자동 태깅 시스템으로, LSQ(Learned 
 |-----------|------|-------------------|------|
 | QAT (XNNPACK) | 43 MB | 66.72% | Fake quantization, FP32 weights |
 | QAT (NNAPI) | 43 MB | 66.72% | Fake quantization, FP32 weights |
-| **INT8 (XNNPACK)** | **11 MB** | 63.33% | Real INT8 weights, CPU 최적화 |
-| **INT8 (NNAPI)** | **11 MB** | 63.33% | Real INT8 weights, NPU 최적화 |
+| **QAT INT8 Native** | **~23 MB** | **59.09%** | Per-channel 양자화, LSQ 호환 |
+| **INT8 PTQ (XNNPACK)** | **11 MB** | 63.33% | Real INT8 weights, CPU 최적화 |
+| **INT8 PTQ (NNAPI)** | **11 MB** | 63.33% | Real INT8 weights, NPU 최적화 |
 
 ### 남은 작업
 
@@ -111,10 +112,12 @@ FinalProject/
 │   ├── resnet50_fp32/           # ResNet-50 FP32 체크포인트
 │   └── resnet50_qat/            # ResNet-50 QAT 체크포인트
 ├── exported_models/
-│   ├── resnet18_multilabel_int8_xnnpack.pte  # ResNet-18 INT8 CPU용 (11MB)
-│   ├── resnet18_multilabel_int8_nnapi.pte    # ResNet-18 INT8 NPU용 (11MB)
-│   ├── resnet50_multilabel_int8_xnnpack.pte  # ResNet-50 INT8 CPU용 (24MB)
-│   └── resnet50_multilabel_int8_nnapi.pte    # ResNet-50 INT8 NPU용 (24MB)
+│   ├── resnet18_multilabel_int8_xnnpack.pte      # ResNet-18 INT8 PTQ CPU용 (11MB)
+│   ├── resnet18_multilabel_int8_nnapi.pte        # ResNet-18 INT8 PTQ NPU용 (11MB)
+│   ├── resnet18_multilabel_qat_int8_xnnpack.pte  # ResNet-18 QAT INT8 CPU용 (~11MB)
+│   ├── resnet50_multilabel_int8_xnnpack.pte      # ResNet-50 INT8 PTQ CPU용 (24MB)
+│   ├── resnet50_multilabel_int8_nnapi.pte        # ResNet-50 INT8 PTQ NPU용 (24MB)
+│   └── resnet50_multilabel_qat_int8_xnnpack.pte  # ResNet-50 QAT INT8 CPU용 (~24MB)
 ├── android/                     # Android 벤치마크 앱
 │   ├── app/
 │   │   └── src/main/
@@ -171,9 +174,12 @@ python scripts/download_coco.py --val-only
 |------|------|------|
 | `--model` | 모델 선택 | `--model resnet50` |
 | `--checkpoint` | 체크포인트 경로 (필수) | `--checkpoint checkpoints/resnet50_fp32/best_model.pth` |
-| `--int8` | INT8 PTQ 양자화 적용 | `--int8` |
+| `--int8` | INT8 PTQ 양자화 적용 (FP32 모델용) | `--int8` |
 | `--qat` | QAT 모델 export | `--qat` |
+| `--convert-int8` | QAT 모델을 INT8로 변환 (PT2E calibration) | `--qat --convert-int8` |
+| `--qat-native` | QAT 모델을 INT8로 변환 (per-channel, 권장) | `--qat --qat-native` |
 | `--backend` | ExecuTorch 백엔드 (xnnpack, nnapi) | `--backend xnnpack` |
+| `--calibration-samples` | Calibration 샘플 수 (기본값: 100) | `--calibration-samples 500` |
 
 ### evaluate.py
 
@@ -288,7 +294,35 @@ python scripts/export_executorch.py \
     --backend nnapi
 ```
 
-#### INT8 양자화 모델 변환 (권장)
+#### QAT → INT8 변환 (학습된 step_size 사용)
+
+QAT 학습 중 학습된 step_size를 사용하여 실제 INT8로 변환합니다. PTQ보다 높은 정확도를 유지하면서 모델 크기를 줄일 수 있습니다.
+
+```bash
+# ResNet-18 QAT → INT8 (XNNPACK)
+python scripts/export_executorch.py \
+    --checkpoint checkpoints/resnet18_qat/best_model.pth \
+    --model resnet18 \
+    --qat \
+    --convert-int8 \
+    --backend xnnpack
+
+# ResNet-50 QAT → INT8 (NNAPI, NPU 최적화)
+python scripts/export_executorch.py \
+    --checkpoint checkpoints/resnet50_qat/best_model.pth \
+    --model resnet50 \
+    --qat \
+    --convert-int8 \
+    --backend nnapi
+```
+
+**QAT INT8 변환 특징:**
+- QAT 학습 중 최적화된 step_size (scale factor) 사용
+- Calibration 없이 학습된 양자화 파라미터 적용
+- PTQ 대비 더 높은 정확도 유지 기대
+- 모델 크기: ~75% 감소 (FP32 대비)
+
+#### INT8 양자화 모델 변환 (PTQ)
 
 ```bash
 # ResNet-18 INT8 XNNPACK (CPU 최적화)
@@ -313,7 +347,7 @@ python scripts/export_executorch.py \
 - NPU에서 최적화된 INT8 연산 사용
 - Calibration 기반 정확한 양자화 범위 설정
 
-**출력 파일명:** `exported_models/{model_name}_multilabel_{fp32|qat|int8}_{backend}.pte`
+**출력 파일명:** `exported_models/{model_name}_multilabel_{fp32|qat|qat_int8|int8}_{backend}.pte`
 
 ### 5. ExecuTorch 모델 평가
 
@@ -398,7 +432,8 @@ Output: 80 class probabilities
 | 방식 | 학습 | 모델 크기 | Classification mAP | 특징 |
 |------|------|----------|-------------------|------|
 | **LSQ QAT** | 학습 중 양자화 시뮬레이션 | 43 MB | 66.72% | Fake quantization, 높은 정확도 |
-| **INT8 PTQ** | 학습 후 양자화 | **11 MB** | 63.33% | Real INT8 weights, 빠른 추론 |
+| **QAT INT8 Native** | QAT 학습 후 INT8 변환 | **~23 MB** | **59.09%** | Per-channel, LSQ 호환, 권장 |
+| **INT8 PTQ** | 학습 후 양자화 | **11 MB** | 63.33% | Real INT8 weights, Calibration 기반 |
 
 ## 파이프라인 개요
 

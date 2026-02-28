@@ -49,6 +49,8 @@ def parse_args():
                         help='Model architecture (overrides config)')
     parser.add_argument('--qat', action='store_true',
                         help='Model was trained with QAT (for PyTorch checkpoint)')
+    parser.add_argument('--int8-lsq', action='store_true',
+                        help='Evaluate INT8 converted model (QAT → INT8, requires --qat)')
     parser.add_argument('--data-dir', type=str, default=None,
                         help='Override data directory from config')
     parser.add_argument('--batch-size', type=int, default=128,
@@ -418,6 +420,10 @@ def main():
         print(f"\nERROR: COCO dataset not found at {data_dir}")
         sys.exit(1)
 
+    # --int8-lsq는 QAT 모델이 필요하므로 자동으로 --qat 활성화
+    if args.int8_lsq:
+        args.qat = True
+
     # Load model
     if use_pte:
         # Load ExecuTorch model
@@ -429,10 +435,26 @@ def main():
     else:
         # Load PyTorch model
         model = load_model(config, args.checkpoint, args.qat, device)
-        print(f"\nModel info:")
-        print(f"  Type: PyTorch {'(QAT)' if args.qat else '(FP32)'}")
-        print(f"  Parameters: {count_parameters(model):,}")
-        print(f"  Size: {get_model_size_mb(model):.2f} MB")
+
+        # INT8 변환 (--int8-lsq)
+        if args.int8_lsq:
+            from src.models.int8_export import convert_lsq_to_int8, get_model_size_breakdown
+
+            print("\nConverting QAT model to INT8 storage...")
+            model = convert_lsq_to_int8(model)
+            model = model.to(device)
+
+            size_info = get_model_size_breakdown(model)
+            print(f"\nModel info:")
+            print(f"  Type: INT8 Storage (learned LSQ step_size)")
+            print(f"  INT8 weights: {size_info['int8_mb']:.2f} MB")
+            print(f"  FP32 params:  {size_info['fp32_mb']:.2f} MB")
+            print(f"  Total:        {size_info['total_mb']:.2f} MB")
+        else:
+            print(f"\nModel info:")
+            print(f"  Type: PyTorch {'(QAT fake-quant)' if args.qat else '(FP32)'}")
+            print(f"  Parameters: {count_parameters(model):,}")
+            print(f"  Size: {get_model_size_mb(model):.2f} MB")
 
     # Initial evaluation with default threshold
     initial_threshold = args.threshold if args.threshold else 0.5
