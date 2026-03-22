@@ -14,63 +14,88 @@ On-Device AI 기반 실시간 사진 자동 태깅 시스템으로, LSQ(Learned 
 
 ### 지원 모델 비교
 
-| 모델 | 파라미터 | FP32 크기 | INT8 크기 | 특징 |
-|------|----------|-----------|-----------|------|
-| ResNet-18 | 11.7M | ~45 MB | ~11 MB | 경량, 빠른 추론 |
-| ResNet-34 | 21.8M | ~83 MB | ~21 MB | 중간 규모 |
-| ResNet-50 | 23.7M | ~90 MB | ~24 MB | 높은 정확도 |
+| 모델 | 파라미터 | FP32 크기 | INT8 PTQ 크기 | 특징 |
+|------|----------|-----------|---------------|------|
+| ResNet-18 | 11.7M | ~45 MB | 11 MB | 경량, 빠른 추론 |
+| ResNet-34 | 21.8M | ~83 MB | 21 MB | 중간 규모 |
+| ResNet-50 | 23.7M | ~90 MB | 23 MB | 높은 정확도 |
 
 ## 현재 진행 상황
 
 ### 완료된 작업
 
-- [x] ResNet-18 모델 구현 (다중 레이블 분류)
+- [x] ResNet-18/34/50 모델 구현 (다중 레이블 분류)
 - [x] COCO 2017 데이터셋 로더 구현
 - [x] 데이터 증강 파이프라인 구축
 - [x] Full Precision (FP32) 학습 완료 (50 epochs)
 - [x] LSQ Quantization-Aware Training (QAT) 완료 (30 epochs)
 - [x] 모델 평가 및 성능 측정
-- [x] ExecuTorch 모델 변환 (XNNPACK, NNAPI)
-- [x] **INT8 Post-Training Quantization 구현**
-- [x] **ExecuTorch (.pte) 모델 평가 기능 구현**
-- [x] **Android 벤치마크 앱 개발**
+- [x] INT8 Post-Training Quantization 구현
+- [x] ExecuTorch 모델 변환 (XNNPACK, NNAPI) — 전 모델 PTQ 완료
+- [x] ExecuTorch (.pte) 모델 평가 기능 구현
 
-### 달성 성능 (FP32 모델)
+### 전체 모델 평가 결과
 
 > **Note**: 본 프로젝트의 mAP는 **Multi-label Classification mAP** (Precision-Recall AUC 기반)입니다.
 > COCO Object Detection mAP (IoU@[0.5:0.95])와는 다른 지표입니다.
 
-| 지표 | 목표 | 달성 | 상태 |
-|------|------|------|------|
-| mAP (Classification) | > 60% | **66.72%** | ✅ 달성 |
-| Precision | - | 73.56% | - |
-| Recall | - | 70.02% | - |
-| F1 Score | - | 68.54% | - |
-| 모델 크기 (QAT) | - | 43 MB | FP32 weights |
-| **모델 크기 (INT8)** | < 15MB | **11 MB** | ✅ **75% 감소** |
+#### ResNet-18
 
-### FP32 vs INT8 성능 비교
+| 타입 | mAP | Precision | Recall | F1 |
+|------|-----|-----------|--------|-----|
+| FP32 | 66.31% | 72.48% | 71.94% | 68.90% |
+| QAT | 66.38% | 71.60% | 72.91% | 68.96% |
+| PTQ XNNPACK | 65.76% | 72.79% | 71.55% | 68.86% |
+| QAT XNNPACK | 64.62% | 72.00% | 70.31% | 67.84% |
 
-| 지표 | FP32 모델 | INT8 모델 | 차이 |
-|------|-----------|-----------|------|
-| **mAP (Classification)** | 66.72% | 63.33% | -3.39% |
-| Precision | 73.56% | 72.23% | -1.33% |
-| Recall | 70.02% | 70.89% | +0.87% |
-| F1 Score | 68.54% | 68.18% | -0.36% |
-| **모델 크기** | 43 MB | **11 MB** | **-75%** |
-| 최적 Threshold | 0.50 | 0.25 | - |
+#### ResNet-34
 
-> INT8 양자화로 mAP가 약 3.4% 감소했지만, 모델 크기는 75% 줄어들어 모바일 NPU에서 더 빠른 추론이 가능합니다.
+| 타입 | mAP | Precision | Recall | F1 |
+|------|-----|-----------|--------|-----|
+| FP32 | 70.97% | 79.92% | 70.88% | 72.20% |
+| QAT | 70.48% | 79.45% | 70.54% | 71.78% |
+| PTQ XNNPACK | 70.53% | 74.21% | 75.89% | 72.16% |
+| QAT XNNPACK | 16.16% | 25.22% | 31.77% | 25.44% |
+
+#### ResNet-50
+
+| 타입 | mAP | Precision | Recall | F1 |
+|------|-----|-----------|--------|-----|
+| **FP32** | **77.21%** | **83.64%** | 76.38% | **77.13%** |
+| QAT | 76.96% | 83.89% | 76.44% | 77.31% |
+| PTQ XNNPACK | 76.66% | 83.57% | 76.14% | 76.99% |
+| QAT XNNPACK | 53.72% | 62.26% | 55.73% | 55.18% |
+
+> **최고 성능**: ResNet-50 FP32 모델이 **77.21% mAP**로 가장 높은 정확도를 달성했습니다.
+> FP32, QAT, PTQ XNNPACK 간에는 성능 차이가 미미하나, QAT XNNPACK에서 ResNet-34와 ResNet-50의 성능이 크게 하락하는 현상이 관찰됩니다.
+
+#### 시각화
+
+![mAP Comparison](evaluation_resultses/mAP_comparison.png)
+
+![All Metrics Comparison](evaluation_resultses/all_metrics_comparison.png)
 
 ### 모델 크기 비교
 
-| 모델 타입 | 크기 | Classification mAP | 설명 |
-|-----------|------|-------------------|------|
-| QAT (XNNPACK) | 43 MB | 66.72% | Fake quantization, FP32 weights |
-| QAT (NNAPI) | 43 MB | 66.72% | Fake quantization, FP32 weights |
-| **QAT INT8 Native** | **~23 MB** | **59.09%** | Per-channel 양자화, LSQ 호환 |
-| **INT8 PTQ (XNNPACK)** | **11 MB** | 63.33% | Real INT8 weights, CPU 최적화 |
-| **INT8 PTQ (NNAPI)** | **11 MB** | 63.33% | Real INT8 weights, NPU 최적화 |
+| 모델 타입 | 크기 | 설명 |
+|-----------|------|------|
+| QAT (XNNPACK/NNAPI) | 43 MB | Fake quantization, FP32 weights |
+| **INT8 PTQ (XNNPACK/NNAPI)** | **11~23 MB** | Real INT8 weights, Calibration 기반 |
+| **QAT INT8 (XNNPACK)** | **23 MB** | QAT 학습 후 INT8 변환 |
+
+### Exported 모델 목록
+
+| 파일명 | 크기 | 설명 |
+|--------|------|------|
+| `resnet18_multilabel_ptq_xnnpack.pte` | 11 MB | ResNet-18 INT8 PTQ, CPU용 |
+| `resnet18_multilabel_ptq_nnapi.pte` | 11 MB | ResNet-18 INT8 PTQ, NPU용 |
+| `resnet18_multilabel_qat_xnnpack.pte` | 11 MB | ResNet-18 QAT INT8, CPU용 |
+| `resnet34_multilabel_ptq_xnnpack.pte` | 21 MB | ResNet-34 INT8 PTQ, CPU용 |
+| `resnet34_multilabel_ptq_nnapi.pte` | 21 MB | ResNet-34 INT8 PTQ, NPU용 |
+| `resnet34_multilabel_qat_xnnpack.pte` | 21 MB | ResNet-34 QAT INT8, CPU용 |
+| `resnet50_multilabel_ptq_xnnpack.pte` | 23 MB | ResNet-50 INT8 PTQ, CPU용 |
+| `resnet50_multilabel_ptq_nnapi.pte` | 23 MB | ResNet-50 INT8 PTQ, NPU용 |
+| `resnet50_multilabel_qat_xnnpack.pte` | 24 MB | ResNet-50 QAT INT8, CPU용 |
 
 ### 남은 작업
 
@@ -86,16 +111,19 @@ FinalProject/
 │   └── config.yaml              # 학습/양자화/배포 설정
 ├── scripts/
 │   ├── download_coco.py         # COCO 데이터셋 다운로드
-│   ├── train.py                 # 학습 스크립트 (FP32 & QAT)
-│   ├── evaluate.py              # 모델 평가
-│   └── export_executorch.py     # ExecuTorch 변환 (INT8 지원)
+│   ├── train.py                 # FP32 학습 스크립트
+│   ├── train_pt2e_qat.py        # PT2E 기반 QAT 학습 스크립트
+│   ├── evaluate.py              # 모델 평가 (PyTorch / ExecuTorch)
+│   ├── export_executorch.py     # ExecuTorch INT8 변환 (PTQ / QAT)
+│   └── plot_evaluation_results.py # 평가 결과 시각화 그래프 생성
 ├── src/
 │   ├── data/
 │   │   ├── dataset.py           # COCO 다중 레이블 데이터셋
 │   │   └── augmentation.py      # 데이터 증강 (Resize, Crop, ColorJitter)
 │   ├── models/
 │   │   ├── resnet.py            # ResNet-18/34/50 구현
-│   │   └── quantization.py      # LSQ 양자화 모듈
+│   │   ├── quantization.py      # LSQ 양자화 모듈
+│   │   └── int8_export.py       # INT8 Export 유틸리티
 │   ├── training/
 │   │   ├── trainer.py           # Trainer 클래스 (AMP 지원)
 │   │   └── loss.py              # 손실 함수 (BCE, Focal, Asymmetric)
@@ -105,29 +133,20 @@ FinalProject/
 │       └── metrics.py           # 평가 지표 (mAP, F1 등)
 ├── checkpoints/
 │   ├── resnet18_fp32/           # ResNet-18 FP32 체크포인트
-│   │   └── best_model.pth
 │   ├── resnet18_qat/            # ResNet-18 QAT 체크포인트
-│   │   └── best_model.pth
 │   ├── resnet34_fp32/           # ResNet-34 FP32 체크포인트
+│   ├── resnet34_qat/            # ResNet-34 QAT 체크포인트
 │   ├── resnet50_fp32/           # ResNet-50 FP32 체크포인트
 │   └── resnet50_qat/            # ResNet-50 QAT 체크포인트
-├── exported_models/
-│   ├── resnet18_multilabel_int8_xnnpack.pte      # ResNet-18 INT8 PTQ CPU용 (11MB)
-│   ├── resnet18_multilabel_int8_nnapi.pte        # ResNet-18 INT8 PTQ NPU용 (11MB)
-│   ├── resnet18_multilabel_qat_int8_xnnpack.pte  # ResNet-18 QAT INT8 CPU용 (~11MB)
-│   ├── resnet50_multilabel_int8_xnnpack.pte      # ResNet-50 INT8 PTQ CPU용 (24MB)
-│   ├── resnet50_multilabel_int8_nnapi.pte        # ResNet-50 INT8 PTQ NPU용 (24MB)
-│   └── resnet50_multilabel_qat_int8_xnnpack.pte  # ResNet-50 QAT INT8 CPU용 (~24MB)
-├── android/                     # Android 벤치마크 앱
-│   ├── app/
-│   │   └── src/main/
-│   │       ├── java/.../MainActivity.kt      # 벤치마크 UI
-│   │       ├── java/.../ModelBenchmark.kt    # ExecuTorch 추론
-│   │       └── assets/                       # 모델 파일 위치
-│   └── build.gradle.kts
+├── exported_models/             # ExecuTorch .pte 모델 파일
 ├── data/
-│   └── coco/                    # COCO 2017 데이터셋 위치
+│   └── coco/                    # COCO 2017 데이터셋
 ├── logs/                        # TensorBoard 학습 로그
+├── notebooks/                   # Jupyter 노트북 (실험용)
+├── evaluation_resultses/         # 모델별 평가 결과 및 시각화
+│   ├── *_evaluation_results.txt # 모델별 mAP, Precision, Recall, F1
+│   ├── mAP_comparison.png       # mAP 비교 그래프
+│   └── all_metrics_comparison.png # 전체 메트릭 비교 그래프
 ├── reference/                   # 참고 논문 및 제안서
 └── requirements.txt             # Python 의존성
 ```
@@ -174,12 +193,10 @@ python scripts/download_coco.py --val-only
 |------|------|------|
 | `--model` | 모델 선택 | `--model resnet50` |
 | `--checkpoint` | 체크포인트 경로 (필수) | `--checkpoint checkpoints/resnet50_fp32/best_model.pth` |
-| `--int8` | INT8 PTQ 양자화 적용 (FP32 모델용) | `--int8` |
-| `--qat` | QAT 모델 export | `--qat` |
-| `--convert-int8` | QAT 모델을 INT8로 변환 (PT2E calibration) | `--qat --convert-int8` |
-| `--qat-native` | QAT 모델을 INT8로 변환 (per-channel, 권장) | `--qat --qat-native` |
+| `--ptq` | PTQ: FP32 모델을 calibration으로 INT8 변환 | `--ptq` |
+| `--qat` | QAT: QAT 학습된 모델을 calibration으로 INT8 변환 | `--qat` |
 | `--backend` | ExecuTorch 백엔드 (xnnpack, nnapi) | `--backend xnnpack` |
-| `--calibration-samples` | Calibration 샘플 수 (기본값: 100) | `--calibration-samples 500` |
+| `--calibration-samples` | Calibration 샘플 수 (기본값: 500) | `--calibration-samples 500` |
 
 ### evaluate.py
 
@@ -187,7 +204,7 @@ python scripts/download_coco.py --val-only
 |------|------|------|
 | `--model` | 모델 선택 | `--model resnet50` |
 | `--checkpoint` | PyTorch 체크포인트 경로 | `--checkpoint checkpoints/resnet50_fp32/best_model.pth` |
-| `--pte` | ExecuTorch 모델 경로 | `--pte exported_models/resnet50_multilabel_int8_xnnpack.pte` |
+| `--pte` | ExecuTorch 모델 경로 | `--pte exported_models/resnet50_multilabel_ptq_xnnpack.pte` |
 | `--qat` | QAT 모델 평가 | `--qat` |
 
 ## 사용 방법
@@ -211,9 +228,10 @@ python scripts/train.py --config configs/config.yaml --model resnet50 \
 
 **학습 설정:**
 - Epochs: 50
-- Batch Size: 128
+- Batch Size: 64
 - Optimizer: SGD (lr=0.1, momentum=0.9, nesterov=True)
 - Scheduler: Cosine Annealing
+- Loss: Asymmetric Loss (gamma_neg=4, gamma_pos=1)
 - Mixed Precision Training (AMP): 활성화
 
 **체크포인트 저장 위치:** `checkpoints/{model_name}_fp32/`
@@ -245,8 +263,10 @@ python scripts/train.py \
 
 **QAT 설정:**
 - Epochs: 30
-- Learning Rate: 0.01 (FP32의 1/10)
-- Weight Decay: 5e-5 (FP32의 절반)
+- Learning Rate: 0.001 (LSQ 논문 권장)
+- Batch Size: 32 (AMP OFF → FP32 메모리 사용)
+- AMP: OFF (FP16이 LSQ step_size 학습을 방해)
+- Weight Decay: 1e-4
 - 제외 레이어: conv1 (첫 번째 레이어), fc (마지막 레이어)
 
 **체크포인트 저장 위치:** `checkpoints/{model_name}_qat/`
@@ -258,10 +278,6 @@ python scripts/train.py \
 python scripts/evaluate.py \
     --checkpoint checkpoints/resnet18_fp32/best_model.pth \
     --model resnet18
-
-python scripts/evaluate.py \
-    --checkpoint checkpoints/resnet34_fp32/best_model.pth \
-    --model resnet34
 
 python scripts/evaluate.py \
     --checkpoint checkpoints/resnet50_fp32/best_model.pth \
@@ -276,104 +292,58 @@ python scripts/evaluate.py \
 
 ### 4. ExecuTorch 변환 (모바일 배포용)
 
-#### QAT 모델 변환 (FP32 weights)
+두 가지 모드 모두 **native INT8 연산** (.pte)을 생성합니다.
+
+#### PTQ (Post-Training Quantization) — FP32 모델 사용
 
 ```bash
 # ResNet-18 XNNPACK 백엔드 (CPU)
 python scripts/export_executorch.py \
-    --checkpoint checkpoints/resnet18_qat/best_model.pth \
+    --checkpoint checkpoints/resnet18_fp32/best_model.pth \
     --model resnet18 \
-    --qat \
+    --ptq \
     --backend xnnpack
 
 # ResNet-50 NNAPI 백엔드 (NPU)
 python scripts/export_executorch.py \
-    --checkpoint checkpoints/resnet50_qat/best_model.pth \
-    --model resnet50 \
-    --qat \
-    --backend nnapi
-```
-
-#### QAT → INT8 변환 (학습된 step_size 사용)
-
-QAT 학습 중 학습된 step_size를 사용하여 실제 INT8로 변환합니다. PTQ보다 높은 정확도를 유지하면서 모델 크기를 줄일 수 있습니다.
-
-```bash
-# ResNet-18 QAT → INT8 (XNNPACK)
-python scripts/export_executorch.py \
-    --checkpoint checkpoints/resnet18_qat/best_model.pth \
-    --model resnet18 \
-    --qat \
-    --convert-int8 \
-    --backend xnnpack
-
-# ResNet-50 QAT → INT8 (NNAPI, NPU 최적화)
-python scripts/export_executorch.py \
-    --checkpoint checkpoints/resnet50_qat/best_model.pth \
-    --model resnet50 \
-    --qat \
-    --convert-int8 \
-    --backend nnapi
-```
-
-**QAT INT8 변환 특징:**
-- QAT 학습 중 최적화된 step_size (scale factor) 사용
-- Calibration 없이 학습된 양자화 파라미터 적용
-- PTQ 대비 더 높은 정확도 유지 기대
-- 모델 크기: ~75% 감소 (FP32 대비)
-
-#### INT8 양자화 모델 변환 (PTQ)
-
-```bash
-# ResNet-18 INT8 XNNPACK (CPU 최적화)
-python scripts/export_executorch.py \
-    --checkpoint checkpoints/resnet18_fp32/best_model.pth \
-    --model resnet18 \
-    --int8 \
-    --backend xnnpack \
-    --calibration-samples 100
-
-# ResNet-50 INT8 NNAPI (NPU 최적화)
-python scripts/export_executorch.py \
     --checkpoint checkpoints/resnet50_fp32/best_model.pth \
     --model resnet50 \
-    --int8 \
-    --backend nnapi \
-    --calibration-samples 100
+    --ptq \
+    --backend nnapi
 ```
 
-**INT8 양자화 특징:**
-- 모델 크기: ~75% 감소 (ResNet-18: 45MB → 11MB)
-- NPU에서 최적화된 INT8 연산 사용
-- Calibration 기반 정확한 양자화 범위 설정
+#### QAT → INT8 — QAT 학습된 모델 사용 (더 높은 정확도)
 
-**출력 파일명:** `exported_models/{model_name}_multilabel_{fp32|qat|qat_int8|int8}_{backend}.pte`
+```bash
+# ResNet-50 XNNPACK 백엔드 (CPU)
+python scripts/export_executorch.py \
+    --checkpoint checkpoints/resnet50_qat/best_model.pth \
+    --model resnet50 \
+    --qat \
+    --backend xnnpack
+```
+
+**두 모드 비교:**
+
+| 모드 | 입력 모델 | 정확도 | 설명 |
+|------|-----------|--------|------|
+| `--ptq` | FP32 체크포인트 | 보통 | Calibration만으로 INT8 변환 |
+| `--qat` | QAT 체크포인트 | 높음 | QAT로 양자화에 최적화된 weights 사용 |
+
+**출력 파일명:** `exported_models/{model_name}_multilabel_{ptq|qat}_{backend}.pte`
 
 ### 5. ExecuTorch 모델 평가
 
 ```bash
-# INT8 모델 평가 (ExecuTorch)
-python scripts/evaluate.py --pte exported_models/resnet18_multilabel_int8_xnnpack.pte
-python scripts/evaluate.py --pte exported_models/resnet50_multilabel_int8_xnnpack.pte
+# PTQ 모델 평가 (ExecuTorch)
+python scripts/evaluate.py --pte exported_models/resnet18_multilabel_ptq_xnnpack.pte
+python scripts/evaluate.py --pte exported_models/resnet50_multilabel_ptq_xnnpack.pte
 
-# QAT 모델 평가 (ExecuTorch)
-python scripts/evaluate.py --pte exported_models/resnet18_multilabel_qat_xnnpack.pte
+# QAT INT8 모델 평가 (ExecuTorch)
+python scripts/evaluate.py --pte exported_models/resnet50_multilabel_qat_xnnpack.pte
 ```
 
-### 6. Android 앱 빌드
-
-```bash
-cd android
-./gradlew assembleDebug
-```
-
-**앱 기능:**
-- ExecuTorch 모델 로딩 (Asset/External)
-- COCO val2017 이미지 벤치마크
-- CPU/NPU 백엔드 선택
-- 추론 시간 측정 (총 시간, 이미지당 시간)
-
-### 7. TensorBoard 로그 확인
+### 6. TensorBoard 로그 확인
 
 ```bash
 tensorboard --logdir logs/
@@ -385,9 +355,8 @@ tensorboard --logdir logs/
 |------|------|------|
 | 학습 프레임워크 | PyTorch | >= 2.0.0 |
 | 모바일 배포 | ExecuTorch | >= 1.0.0 |
-| 양자화 라이브러리 | torchao | >= 0.14.0 |
+| 양자화 라이브러리 | torchao | >= 0.4.0 |
 | 데이터셋 | COCO 2017 | 80 카테고리 |
-| Android 언어 | Kotlin | 1.9+ |
 | 하드웨어 가속 | NNAPI / XNNPACK | NPU/CPU 지원 |
 
 ## 모델 아키텍처
@@ -429,11 +398,10 @@ Output: 80 class probabilities
 
 ### 양자화 비교
 
-| 방식 | 학습 | 모델 크기 | Classification mAP | 특징 |
-|------|------|----------|-------------------|------|
-| **LSQ QAT** | 학습 중 양자화 시뮬레이션 | 43 MB | 66.72% | Fake quantization, 높은 정확도 |
-| **QAT INT8 Native** | QAT 학습 후 INT8 변환 | **~23 MB** | **59.09%** | Per-channel, LSQ 호환, 권장 |
-| **INT8 PTQ** | 학습 후 양자화 | **11 MB** | 63.33% | Real INT8 weights, Calibration 기반 |
+| 방식 | 학습 | 모델 크기 | 특징 |
+|------|------|----------|------|
+| **LSQ QAT** | 학습 중 양자화 시뮬레이션 | 43 MB | Fake quantization, 높은 정확도 |
+| **INT8 PTQ** | 학습 후 양자화 | **11~23 MB** | Real INT8 weights, Calibration 기반 |
 
 ## 파이프라인 개요
 
@@ -452,8 +420,7 @@ Output: 80 class probabilities
 │       │                      LSQ QAT Training      INT8 PTQ      │
 │       │                            │                     │       │
 │       │                            ↓                     ↓       │
-│       │                   QAT Model (43MB)      INT8 Model (11MB)│
-│       │                   mAP: 66.72%           mAP: 63.33%      │
+│       │                   QAT Model (43MB)    PTQ Model (11~23MB)│
 │       │                            │                     │       │
 │       │                            └──────────┬──────────┘       │
 │       │                                       ↓                  │
@@ -495,7 +462,7 @@ Output: 80 class probabilities
 ### 2. 손실 함수 지원
 - **BCEWithLogitsLoss**: 기본 이진 교차 엔트로피
 - **FocalLoss**: 클래스 불균형 대응
-- **AsymmetricLoss**: 다중 레이블 최적화
+- **AsymmetricLoss**: 다중 레이블 최적화 (기본 사용)
 
 ### 3. 학습 최적화
 - **Mixed Precision Training (AMP)**: FP16으로 학습 속도 ~2배 향상
@@ -507,11 +474,10 @@ Output: 80 class probabilities
 - **INT8 PTQ**: Post-Training Quantization으로 실제 INT8 변환
 - **Per-tensor Quantization**: ExecuTorch 호환 양자화
 
-### 5. Android 벤치마크 앱
-- ExecuTorch 모델 로딩 및 추론
-- COCO val2017 이미지 벤치마크
-- CPU/NPU 백엔드 지원
-- 디바이스 정보 표시 (NPU 감지)
+### 5. 모바일 배포
+- ExecuTorch를 통한 .pte 모델 생성
+- XNNPACK (CPU) / NNAPI (NPU) 백엔드 지원
+- Android 앱에서 ExecuTorch Runtime으로 추론 가능 (별도 프로젝트)
 
 ## 참고 문헌
 

@@ -1,0 +1,17 @@
+==================================================
+Evaluation Results
+==================================================
+
+Configuration:
+  Model: exported_models/resnet34_multilabel_qat_xnnpack.pte (ExecuTorch)
+  Batch Size: 128
+  Threshold: None
+
+Metrics:
+  mAP: 0.1616
+  precision: 0.2522
+  recall: 0.3177
+  f1: 0.2544
+  precision_macro: 0.2578
+  recall_macro: 0.1264
+  f1_macro: 0.0944

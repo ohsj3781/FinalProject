@@ -1,0 +1,18 @@
+==================================================
+Evaluation Results
+==================================================
+
+Configuration:
+  Checkpoint: checkpoints/resnet18_fp32/best_model.pth
+  QAT: False
+  Batch Size: 128
+  Threshold: None
+
+Metrics:
+  mAP: 0.6631
+  precision: 0.7248
+  recall: 0.7194
+  f1: 0.6890
+  precision_macro: 0.6642
+  recall_macro: 0.6005
+  f1_macro: 0.6170
