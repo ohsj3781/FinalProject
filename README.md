@@ -71,9 +71,9 @@ On-Device AI 기반 실시간 사진 자동 태깅 시스템으로, LSQ(Learned 
 
 #### 시각화
 
-![mAP Comparison](evaluation_resultses/mAP_comparison.png)
+![mAP Comparison](evaluation_results/mAP_comparison.png)
 
-![All Metrics Comparison](evaluation_resultses/all_metrics_comparison.png)
+![All Metrics Comparison](evaluation_results/all_metrics_comparison.png)
 
 ### 모델 크기 비교
 
