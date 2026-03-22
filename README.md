@@ -97,9 +97,51 @@ On-Device AI 기반 실시간 사진 자동 태깅 시스템으로, LSQ(Learned 
 | `resnet50_multilabel_ptq_nnapi.pte` | 23 MB | ResNet-50 INT8 PTQ, NPU용 |
 | `resnet50_multilabel_qat_xnnpack.pte` | 24 MB | ResNet-50 QAT INT8, CPU용 |
 
+### 모바일 실제 추론 시간 측정
+
+Galaxy S24+ (Exynos 2400)와 Snapdragon 865+ 디바이스에서 COCO val2017 이미지 5,000장으로 측정한 결과입니다.
+
+#### Exynos 2400 (Galaxy S24+) — CPU (XNNPACK) vs NPU (NNAPI)
+
+| 모델 | 백엔드 | 평균 | 중앙값 | 최소 | 최대 | 표준편차 |
+|------|--------|------|--------|------|------|----------|
+| ResNet-18 | CPU (XNNPACK) | **7.28ms** | 7ms | 3ms | 45ms | 2.04ms |
+| ResNet-18 | NPU (NNAPI) | 8.93ms | 9ms | 3ms | 61ms | 2.92ms |
+| ResNet-34 | CPU (XNNPACK) | 10.06ms | 10ms | 6ms | 94ms | 1.89ms |
+| ResNet-34 | NPU (NNAPI) | **9.58ms** | 9ms | 7ms | 43ms | 1.45ms |
+| ResNet-50 | CPU (XNNPACK) | 11.83ms | 12ms | 8ms | 70ms | 1.62ms |
+| ResNet-50 | NPU (NNAPI) | **11.35ms** | 11ms | 8ms | 91ms | 1.71ms |
+
+> ResNet-18에서는 CPU(XNNPACK)가 더 빠르고, ResNet-34/50에서는 NPU(NNAPI)가 더 빠른 결과를 보입니다.
+> 모든 모델이 **12ms 이하**의 평균 추론 시간으로 실시간 처리가 가능합니다.
+
+#### Snapdragon 865+ — CPU (XNNPACK)
+
+| 모델 | 백엔드 | 평균 | 중앙값 | 최소 | 최대 | 표준편차 |
+|------|--------|------|--------|------|------|----------|
+| ResNet-18 | CPU (XNNPACK) | 21.70ms | 20ms | 7ms | 50ms | 6.57ms |
+| ResNet-34 | CPU (XNNPACK) | 32.75ms | 29ms | 13ms | 86ms | 14.59ms |
+| ResNet-50 | CPU (XNNPACK) | 34.06ms | 28ms | 17ms | 172ms | 15.24ms |
+
+#### Exynos 2400 vs Snapdragon 865+ 비교 (CPU XNNPACK)
+
+| 모델 | Exynos 2400 | Snapdragon 865+ | 속도 차이 |
+|------|-------------|-----------------|-----------|
+| ResNet-18 | 7.28ms | 21.70ms | Exynos **2.98x** 빠름 |
+| ResNet-34 | 10.06ms | 32.75ms | Exynos **3.26x** 빠름 |
+| ResNet-50 | 11.83ms | 34.06ms | Exynos **2.88x** 빠름 |
+
+#### 추론 시간 분포 시각화
+
+![Exynos 2400 Inference Time Distribution](inference_datas/exynos_2400_inference_time_distribution.png)
+
+![Snapdragon 865+ Inference Time Distribution](inference_datas/snapdragon_865+_inference_time_distribution.png)
+
+![Snapdragon vs Exynos CPU Comparison](inference_datas/snapdragon_vs_exynos_cpu_comparison.png)
+
 ### 남은 작업
 
-- [ ] 모바일 실제 추론 시간 측정 (CPU vs NPU)
+- [x] 모바일 실제 추론 시간 측정 (CPU vs NPU)
 - [ ] 배터리 소모량 측정
 - [ ] mAP 80% 달성을 위한 추가 학습
 
@@ -147,6 +189,10 @@ FinalProject/
 │   ├── *_evaluation_results.txt # 모델별 mAP, Precision, Recall, F1
 │   ├── mAP_comparison.png       # mAP 비교 그래프
 │   └── all_metrics_comparison.png # 전체 메트릭 비교 그래프
+├── inference_datas/              # 모바일 추론 시간 측정 데이터
+│   ├── exynos_2400/             # Galaxy S24+ (Exynos 2400) 측정 결과
+│   ├── snapdragon_865+/         # Snapdragon 865+ 측정 결과
+│   └── *.png                    # 추론 시간 분포 시각화
 ├── reference/                   # 참고 논문 및 제안서
 └── requirements.txt             # Python 의존성
 ```
