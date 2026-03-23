@@ -1,0 +1,6 @@
+[submodule "AndroidBenchmark"]
+	path = AndroidBenchmark
+	url = https://github.com/ohsj3781/AndroidBenchmark
+[submodule "AndroidGallery"]
+	path = AndroidGallery
+	url = https://github.com/ohsj3781/AndroidGallery
